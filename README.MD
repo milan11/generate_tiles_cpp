@@ -43,3 +43,23 @@ Choose area, zooms and threads count:
 ```
 ./generate_tiles --xml ../mapnik-stylesheets/osm.xml --output ../generate_tiles_cpp_output/sk --lat_min 47.9796 --lat_max 48.2821 --lon_min 16.9440 --lon_max 17.3831 --zoom_min 0 --zoom_max 18 --threads 4
 ```
+
+The options are:
+
+```
+  -h [ --help ]                         print usage message
+  --xml arg                             map XML file
+  --output arg                          output directory for tiles
+  --lat_min arg (=-90)                  process area from latitude
+  --lat_max arg (=90)                   process area to latitude
+  --lon_min arg (=-180)                 process area from longitude
+  --lon_max arg (=180)                  process area to longitude
+  --zoom_min arg (=0)                   min. zoom to render tiles for
+  --zoom_max arg (=5)                   max. zoom to render tiles for
+  --threads arg (=1)                    count of threads to use for rendering
+  --tms arg (=0)                        use tms scheme (flip y)
+  --datasources arg (="/usr/lib/mapnik/input")
+                                        mapnik data sources directory
+  --fonts arg (="/usr/share/fonts")     fonts directory
+
+```
