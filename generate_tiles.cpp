@@ -99,16 +99,22 @@ public:
 public:
     void add(Task task)
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::unique_lock<std::mutex> lock(mutex);
+
+        while (queue.size() > 100)
+        {
+            cv_fromConsumer.wait(lock);
+        }
+
         queue.push(std::move(task));
-        cv.notify_one();
+        cv_fromProducer.notify_one();
     }
 
     void reportFinish()
     {
         std::lock_guard<std::mutex> lock(mutex);
         finished = true;
-        cv.notify_all();
+        cv_fromProducer.notify_all();
     }
 
     boost::optional<Task> get()
@@ -116,7 +122,7 @@ public:
         std::unique_lock<std::mutex> lock(mutex);
         while (queue.empty() && !finished)
         {
-            cv.wait(lock);
+            cv_fromProducer.wait(lock);
         }
 
         if (queue.empty())
@@ -127,6 +133,8 @@ public:
         {
             Task task = queue.front();
             queue.pop();
+            cv_fromConsumer.notify_one();
+
             std::cout << task.tileUri.string() << std::endl;
             return task;
         }
@@ -137,7 +145,8 @@ private:
     bool finished = false;
 
     std::mutex mutex;
-    std::condition_variable cv;
+    std::condition_variable cv_fromProducer;
+    std::condition_variable cv_fromConsumer;
 };
 
 class RenderThread
@@ -233,8 +242,6 @@ void renderTiles(const mapnik::box2d<double> bbox, const boost::filesystem::path
     {
         renderers.emplace_back(std::make_unique<RenderThread>(tileDir, mapfile, queue, maxZoom));
     }
-
-    renderers.reserve(50000);
 
     if (!boost::filesystem::is_directory(tileDir))
     {
