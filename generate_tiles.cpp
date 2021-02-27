@@ -83,6 +83,7 @@ struct Task
     const int x;
     const int y;
     const unsigned int z;
+    const double scale;
 };
 
 class Queue
@@ -216,7 +217,7 @@ private:
         }
 
         mapnik::image_rgba8 im(renderSize, renderSize);
-        mapnik::agg_renderer<mapnik::image_rgba8> ren(m, im);
+        mapnik::agg_renderer<mapnik::image_rgba8> ren(m, im, task.scale);
         ren.apply();
         mapnik::save_to_file(im, task.tileUri.string());
     }
@@ -231,7 +232,7 @@ private:
     std::thread thread;
 };
 
-void renderTiles(const mapnik::box2d<double> bbox, const boost::filesystem::path &mapfile, const boost::filesystem::path &tileDir, const unsigned int minZoom, const unsigned int maxZoom, const unsigned int numThreads, const bool tmsScheme)
+void renderTiles(const mapnik::box2d<double> bbox, const boost::filesystem::path &mapfile, const boost::filesystem::path &tileDir, const unsigned int minZoom, const unsigned int maxZoom, const double scale, const unsigned int numThreads, const bool tmsScheme)
 {
     Queue queue;
 
@@ -287,7 +288,7 @@ void renderTiles(const mapnik::box2d<double> bbox, const boost::filesystem::path
                 const boost::filesystem::path tileFile = dir_x / (name_y + ".png");
                 if (!boost::filesystem::is_regular_file(tileFile))
                 {
-                    queue.add({tileFile, x, y, z});
+                    queue.add({tileFile, x, y, z, scale});
                 }
             }
         }
@@ -321,6 +322,7 @@ int main(int argc, char *argv[])
         double lon_max;
         unsigned int zoom_min;
         unsigned int zoom_max;
+        double scale;
         unsigned int threads;
         bool tms;
 
@@ -340,6 +342,8 @@ int main(int argc, char *argv[])
         desc.add_options()("lon_max", boost::program_options::value(&lon_max)->default_value(180.0), "process area to longitude");
         desc.add_options()("zoom_min", boost::program_options::value(&zoom_min)->default_value(0), "min. zoom to render tiles for");
         desc.add_options()("zoom_max", boost::program_options::value(&zoom_max)->default_value(5), "max. zoom to render tiles for");
+
+        desc.add_options()("scale", boost::program_options::value(&scale)->default_value(1), "scale factor (use 2 for the 2x tiles for high-resolution displays");
 
         desc.add_options()("threads", boost::program_options::value(&threads)->default_value(1), "count of threads to use for rendering");
         desc.add_options()("tms", boost::program_options::value(&tms)->default_value(false), "use tms scheme (flip y)");
@@ -361,7 +365,7 @@ int main(int argc, char *argv[])
         initMapnik(datasources, fonts);
 
         const mapnik::box2d<double> bbox(lon_min, lat_min, lon_max, lat_max);
-        renderTiles(bbox, xml, output, zoom_min, zoom_max, threads, false);
+        renderTiles(bbox, xml, output, zoom_min, zoom_max, scale, threads, false);
     }
     catch (const std::exception &e)
     {
