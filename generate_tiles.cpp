@@ -274,7 +274,7 @@ private:
 
             cairo_surface_t *surface = cairo_svg_surface_create(svgPath.c_str(), renderSize, renderSize);
             mapnik::cairo_surface_ptr surfacePtr(cairo_surface_reference(surface), mapnik::cairo_surface_closer());
-            mapnik::cairo_renderer<mapnik::cairo_ptr> ren(m, mapnik::create_context(surfacePtr));
+            mapnik::cairo_renderer<mapnik::cairo_ptr> ren(m, mapnik::create_context(surfacePtr), commonTaskSettings.scale);
             ren.apply();
             cairo_surface_finish(surface);
 
