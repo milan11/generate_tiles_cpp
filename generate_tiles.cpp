@@ -10,6 +10,8 @@ https://github.com/openstreetmap/mapnik-stylesheets/blob/master/generate_tiles.p
 #include <mapnik/datasource_cache.hpp>
 #include <mapnik/load_map.hpp>
 #include <mapnik/agg_renderer.hpp>
+#include <mapnik/cairo/cairo_renderer.hpp>
+#include <cairo/cairo-svg.h>
 #include <mapnik/image.hpp>
 #include <mapnik/image_util.hpp>
 #include <mapnik/projection.hpp>
@@ -23,9 +25,13 @@ https://github.com/openstreetmap/mapnik-stylesheets/blob/master/generate_tiles.p
 
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
+#include <boost/algorithm/string/replace.hpp>
 
 const double DEG_TO_RAD = M_PI / 180;
 const double RAD_TO_DEG = 180 / M_PI;
+
+const std::string extensionPng = ".png";
+const std::string extensionSvg = ".svg";
 
 double minmax(const double a, const double b, const double c)
 {
@@ -79,11 +85,24 @@ private:
 
 struct Task
 {
-    const boost::filesystem::path tileUri;
+    const boost::filesystem::path tilePathWithoutExtension;
     const int x;
     const int y;
     const unsigned int z;
-    const double scale;
+};
+
+struct CommonTaskSettings
+{
+    double scale;
+    bool png;
+    bool svg;
+    std::string convertPng;
+    std::string convertSvg;
+    std::string extensionConvertedPng;
+    std::string extensionConvertedSvg;
+    bool deletePng;
+    bool deleteSvg;
+    bool leaveSmallestOnly;
 };
 
 class Queue
@@ -136,7 +155,7 @@ public:
             queue.pop();
             cv_fromConsumer.notify_one();
 
-            std::cout << task.tileUri.string() << std::endl;
+            std::cout << task.tilePathWithoutExtension.string() << std::endl;
             return task;
         }
     }
@@ -153,11 +172,12 @@ private:
 class RenderThread
 {
 public:
-    RenderThread(const boost::filesystem::path &tileDir, const boost::filesystem::path &mapfile, Queue &queue, const unsigned int maxZoom)
+    RenderThread(const boost::filesystem::path &tileDir, const boost::filesystem::path &mapfile, Queue &queue, const unsigned int maxZoom, const CommonTaskSettings &commonTaskSettings)
         : tileDir(tileDir),
           m(256, 256),
           queue(queue),
-          tileproj(maxZoom + 1)
+          tileproj(maxZoom + 1),
+          commonTaskSettings(commonTaskSettings)
     {
         mapnik::load_map(m, mapfile.string(), true);
 
@@ -216,10 +236,70 @@ private:
             m.set_buffer_size(128);
         }
 
-        mapnik::image_rgba8 im(renderSize, renderSize);
-        mapnik::agg_renderer<mapnik::image_rgba8> ren(m, im, task.scale);
-        ren.apply();
-        mapnik::save_to_file(im, task.tileUri.string());
+        if (commonTaskSettings.png)
+        {
+            std::string pngPath = task.tilePathWithoutExtension.string() + extensionPng;
+
+            mapnik::image_rgba8 im(renderSize, renderSize);
+            mapnik::agg_renderer<mapnik::image_rgba8> ren(m, im, commonTaskSettings.scale);
+            ren.apply();
+            mapnik::save_to_file(im, pngPath);
+
+            if (commonTaskSettings.convertPng != "")
+            {
+                std::string pngPathConverted = task.tilePathWithoutExtension.string() + commonTaskSettings.extensionConvertedPng;
+
+                std::string commandLine = boost::replace_all_copy(commonTaskSettings.convertPng, "$1", pngPath);
+                commandLine = boost::replace_all_copy(commandLine, "$2", pngPathConverted);
+
+                {
+                    int result = ::system(commandLine.c_str());
+
+                    if (result != 0)
+                    {
+                        throw "Invalid conversion result: " + std::to_string(result);
+                    }
+                }
+
+                if (commonTaskSettings.deletePng)
+                {
+                    boost::filesystem::remove(pngPath);
+                }
+            }
+        }
+
+        if (commonTaskSettings.svg)
+        {
+            std::string svgPath = task.tilePathWithoutExtension.string() + extensionSvg;
+
+            cairo_surface_t *surface = cairo_svg_surface_create(svgPath.c_str(), renderSize, renderSize);
+            mapnik::cairo_surface_ptr surfacePtr(cairo_surface_reference(surface), mapnik::cairo_surface_closer());
+            mapnik::cairo_renderer<mapnik::cairo_ptr> ren(m, mapnik::create_context(surfacePtr));
+            ren.apply();
+            cairo_surface_finish(surface);
+
+            if (commonTaskSettings.convertSvg != "")
+            {
+                std::string svgPathConverted = task.tilePathWithoutExtension.string() + commonTaskSettings.extensionConvertedSvg;
+
+                std::string commandLine = boost::replace_all_copy(commonTaskSettings.convertSvg, "$1", svgPath);
+                commandLine = boost::replace_all_copy(commandLine, "$2", svgPathConverted);
+
+                {
+                    int result = ::system(commandLine.c_str());
+
+                    if (result != 0)
+                    {
+                        throw "Invalid conversion result: " + std::to_string(result);
+                    }
+                }
+
+                if (commonTaskSettings.deleteSvg)
+                {
+                    boost::filesystem::remove(svgPath);
+                }
+            }
+        }
     }
 
 private:
@@ -230,9 +310,50 @@ private:
 
     std::unique_ptr<mapnik::projection> prj;
     std::thread thread;
+
+    const CommonTaskSettings &commonTaskSettings;
 };
 
-void renderTiles(const mapnik::box2d<double> bbox, const boost::filesystem::path &mapfile, const boost::filesystem::path &tileDir, const unsigned int minZoom, const unsigned int maxZoom, const double scale, const unsigned int numThreads, const bool tmsScheme)
+bool alreadyCreated(const CommonTaskSettings &commonTaskSettings, const boost::filesystem::path &tilePathWithoutExtension)
+{
+    std::vector<std::string> possibleExtensions;
+    if (commonTaskSettings.png)
+    {
+        if (commonTaskSettings.convertPng == "" || !commonTaskSettings.deletePng)
+        {
+            possibleExtensions.push_back(extensionPng);
+        }
+
+        if (commonTaskSettings.convertPng != "")
+        {
+            possibleExtensions.push_back(commonTaskSettings.extensionConvertedPng);
+        }
+    }
+
+    if (commonTaskSettings.svg)
+    {
+        if (commonTaskSettings.convertSvg == "" || !commonTaskSettings.deleteSvg)
+        {
+            possibleExtensions.push_back(extensionSvg);
+        }
+
+        if (commonTaskSettings.convertSvg != "")
+        {
+            possibleExtensions.push_back(commonTaskSettings.extensionConvertedSvg);
+        }
+    }
+
+    if (commonTaskSettings.leaveSmallestOnly)
+    {
+        return std::any_of(possibleExtensions.begin(), possibleExtensions.end(), [&tilePathWithoutExtension](const std::string &extension) { return boost::filesystem::is_regular_file(tilePathWithoutExtension.string() + extension); });
+    }
+    else
+    {
+        return std::all_of(possibleExtensions.begin(), possibleExtensions.end(), [&tilePathWithoutExtension](const std::string &extension) { return boost::filesystem::is_regular_file(tilePathWithoutExtension.string() + extension); });
+    }
+}
+
+void renderTiles(const mapnik::box2d<double> bbox, const boost::filesystem::path &mapfile, const boost::filesystem::path &tileDir, const unsigned int minZoom, const unsigned int maxZoom, const CommonTaskSettings &commonTaskSettings, const unsigned int numThreads, const bool tmsScheme)
 {
     Queue queue;
 
@@ -241,7 +362,7 @@ void renderTiles(const mapnik::box2d<double> bbox, const boost::filesystem::path
 
     for (int i = 0; i < numThreads; ++i)
     {
-        renderers.emplace_back(std::make_unique<RenderThread>(tileDir, mapfile, queue, maxZoom));
+        renderers.emplace_back(std::make_unique<RenderThread>(tileDir, mapfile, queue, maxZoom, commonTaskSettings));
     }
 
     if (!boost::filesystem::is_directory(tileDir))
@@ -285,10 +406,10 @@ void renderTiles(const mapnik::box2d<double> bbox, const boost::filesystem::path
             {
                 const std::string name_y = tmsScheme ? std::to_string(pow(2, z - 1) - y) : std::to_string(y);
 
-                const boost::filesystem::path tileFile = dir_x / (name_y + ".png");
-                if (!boost::filesystem::is_regular_file(tileFile))
+                const boost::filesystem::path tilePathWithoutExtension = dir_x / name_y;
+                if (!alreadyCreated(commonTaskSettings, tilePathWithoutExtension))
                 {
-                    queue.add({tileFile, x, y, z, scale});
+                    queue.add({tilePathWithoutExtension, x, y, z});
                 }
             }
         }
@@ -322,7 +443,6 @@ int main(int argc, char *argv[])
         double lon_max;
         unsigned int zoom_min;
         unsigned int zoom_max;
-        double scale;
         unsigned int threads;
         bool tms;
 
@@ -343,13 +463,23 @@ int main(int argc, char *argv[])
         desc.add_options()("zoom_min", boost::program_options::value(&zoom_min)->default_value(0), "min. zoom to render tiles for");
         desc.add_options()("zoom_max", boost::program_options::value(&zoom_max)->default_value(5), "max. zoom to render tiles for");
 
-        desc.add_options()("scale", boost::program_options::value(&scale)->default_value(1), "scale factor (use 2 for the 2x tiles for high-resolution displays");
-
         desc.add_options()("threads", boost::program_options::value(&threads)->default_value(1), "count of threads to use for rendering");
         desc.add_options()("tms", boost::program_options::value(&tms)->default_value(false), "use tms scheme (flip y)");
 
         desc.add_options()("datasources", boost::program_options::value(&datasources)->default_value("/usr/lib/mapnik/input"), "mapnik data sources directory");
         desc.add_options()("fonts", boost::program_options::value(&fonts)->default_value("/usr/share/fonts"), "fonts directory");
+
+        CommonTaskSettings commonTaskSettings;
+        desc.add_options()("scale", boost::program_options::value(&commonTaskSettings.scale)->default_value(1), "scale factor (use 2 for the 2x tiles for high-resolution displays");
+        desc.add_options()("png", boost::program_options::value(&commonTaskSettings.png)->default_value(true), "create PNG (raster) tiles");
+        desc.add_options()("svg", boost::program_options::value(&commonTaskSettings.svg)->default_value(false), "create SVG (vector) tiles - note that SVG files for complicated tiles can be extremely large without any post-processing");
+        desc.add_options()("convert_png", boost::program_options::value(&commonTaskSettings.convertPng)->default_value(""), "post-processing command to run for each PNG tile - use placeholders for file paths: $1 - absolute path of the original file, $2 - absolute path of the converted file");
+        desc.add_options()("convert_svg", boost::program_options::value(&commonTaskSettings.convertSvg)->default_value(""), "post-processing command to run for each SVG tile - use placeholders for file paths: $1 - absolute path of the original file, $2 - absolute path of the converted file");
+        desc.add_options()("extension_converted_png", boost::program_options::value(&commonTaskSettings.extensionConvertedPng)->default_value(".pngc"), "extension of the post-processed PNG file");
+        desc.add_options()("extension_converted_svg", boost::program_options::value(&commonTaskSettings.extensionConvertedSvg)->default_value(".svgc"), "extension of the post-processed SVG file");
+        desc.add_options()("delete_png", boost::program_options::value(&commonTaskSettings.deletePng)->default_value(false), "delete original PNG file after post-processing");
+        desc.add_options()("delete_svg", boost::program_options::value(&commonTaskSettings.deleteSvg)->default_value(false), "delete original SVG file after post-processing");
+        desc.add_options()("leave_smallest", boost::program_options::value(&commonTaskSettings.leaveSmallestOnly)->default_value(false), "leave smallest file amongst all generated files");
 
         boost::program_options::variables_map vm;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), vm);
@@ -365,7 +495,7 @@ int main(int argc, char *argv[])
         initMapnik(datasources, fonts);
 
         const mapnik::box2d<double> bbox(lon_min, lat_min, lon_max, lat_max);
-        renderTiles(bbox, xml, output, zoom_min, zoom_max, scale, threads, false);
+        renderTiles(bbox, xml, output, zoom_min, zoom_max, commonTaskSettings, threads, false);
     }
     catch (const std::exception &e)
     {
