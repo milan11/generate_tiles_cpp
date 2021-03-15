@@ -103,6 +103,8 @@ struct CommonTaskSettings
     bool deletePng;
     bool deleteSvg;
     bool leaveSmallestOnly;
+    int tileSize;
+    int bufferSize;
 };
 
 class Queue
@@ -174,7 +176,7 @@ class RenderThread
 public:
     RenderThread(const boost::filesystem::path &tileDir, const boost::filesystem::path &mapfile, Queue &queue, const unsigned int maxZoom, const CommonTaskSettings &commonTaskSettings)
         : tileDir(tileDir),
-          m(256, 256),
+          m(commonTaskSettings.tileSize, commonTaskSettings.tileSize),
           queue(queue),
           tileproj(maxZoom + 1),
           commonTaskSettings(commonTaskSettings)
@@ -215,8 +217,8 @@ private:
 private:
     void renderTile(const Task &task)
     {
-        const mapnik::geometry::point<int> p0 = {task.x * 256, (task.y + 1) * 256};
-        const mapnik::geometry::point<int> p1 = {(task.x + 1) * 256, (task.y) * 256};
+        const mapnik::geometry::point<int> p0 = {task.x * commonTaskSettings.tileSize, (task.y + 1) * commonTaskSettings.tileSize};
+        const mapnik::geometry::point<int> p1 = {(task.x + 1) * commonTaskSettings.tileSize, (task.y) * commonTaskSettings.tileSize};
 
         const mapnik::geometry::point<double> l0 = tileproj.fromPixeltoLL(p0, task.z);
         const mapnik::geometry::point<double> l1 = tileproj.fromPixeltoLL(p1, task.z);
@@ -228,13 +230,10 @@ private:
 
         const mapnik::box2d<double> bbox(c0.x, c0.y, c1.x, c1.y);
 
-        int renderSize = 256;
+        int renderSize = commonTaskSettings.tileSize;
         m.resize(renderSize, renderSize);
         m.zoom_to_box(bbox);
-        if (m.buffer_size() < 128)
-        {
-            m.set_buffer_size(128);
-        }
+        m.set_buffer_size(commonTaskSettings.bufferSize);
 
         if (commonTaskSettings.png)
         {
@@ -387,8 +386,8 @@ void renderTiles(const mapnik::box2d<double> bbox, const boost::filesystem::path
         mapnik::geometry::point<int> px0 = gprj.fromLLtoPixel(ll0, z);
         mapnik::geometry::point<int> px1 = gprj.fromLLtoPixel(ll1, z);
 
-        const int x_first = std::max(0, (int)floor(px0.x / 256.0));
-        const int x_last = std::min((int)pow(2, z) - 1, (int)floor(px1.x / 256.0));
+        const int x_first = std::max(0, (int)floor(px0.x / (double)commonTaskSettings.tileSize));
+        const int x_last = std::min((int)pow(2, z) - 1, (int)floor(px1.x / (double)commonTaskSettings.tileSize));
         for (int x = x_first; x <= x_last; ++x)
         {
             const std::string name_x = std::to_string(x);
@@ -399,8 +398,8 @@ void renderTiles(const mapnik::box2d<double> bbox, const boost::filesystem::path
                 boost::filesystem::create_directory(dir_x);
             }
 
-            const int y_first = std::max(0, (int)floor(px0.y / 256.0));
-            const int y_last = std::min((int)pow(2, z) - 1, (int)floor(px1.y / 256.0));
+            const int y_first = std::max(0, (int)floor(px0.y / (double)commonTaskSettings.tileSize));
+            const int y_last = std::min((int)pow(2, z) - 1, (int)floor(px1.y / (double)commonTaskSettings.tileSize));
 
             for (int y = y_first; y <= y_last; ++y)
             {
@@ -480,6 +479,8 @@ int main(int argc, char *argv[])
         desc.add_options()("delete_png", boost::program_options::value(&commonTaskSettings.deletePng)->default_value(false), "delete original PNG file after post-processing");
         desc.add_options()("delete_svg", boost::program_options::value(&commonTaskSettings.deleteSvg)->default_value(false), "delete original SVG file after post-processing");
         desc.add_options()("leave_smallest", boost::program_options::value(&commonTaskSettings.leaveSmallestOnly)->default_value(false), "leave smallest file amongst all generated files");
+        desc.add_options()("tile_size", boost::program_options::value(&commonTaskSettings.tileSize)->default_value(256), "tile size");
+        desc.add_options()("buffer_size", boost::program_options::value(&commonTaskSettings.bufferSize)->default_value(128), "Mapnik buffer size - use higher value if some tile boundaries do not match (e.g. if a text is cut at the edge of two tiles)");
 
         boost::program_options::variables_map vm;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), vm);
