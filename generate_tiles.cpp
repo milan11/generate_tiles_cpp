@@ -387,7 +387,7 @@ void renderTiles(const mapnik::box2d<double> bbox, const boost::filesystem::path
         mapnik::geometry::point<int> px1 = gprj.fromLLtoPixel(ll1, z);
 
         const int x_first = std::max(0, (int)floor(px0.x / (double)commonTaskSettings.tileSize));
-        const int x_last = std::min((int)pow(2, z) - 1, (int)floor(px1.x / (double)commonTaskSettings.tileSize));
+        const int x_last = std::min((int)pow(2, z) * 256 / commonTaskSettings.tileSize - 1, (int)floor(px1.x / (double)commonTaskSettings.tileSize));
         for (int x = x_first; x <= x_last; ++x)
         {
             const std::string name_x = std::to_string(x);
@@ -399,7 +399,7 @@ void renderTiles(const mapnik::box2d<double> bbox, const boost::filesystem::path
             }
 
             const int y_first = std::max(0, (int)floor(px0.y / (double)commonTaskSettings.tileSize));
-            const int y_last = std::min((int)pow(2, z) - 1, (int)floor(px1.y / (double)commonTaskSettings.tileSize));
+            const int y_last = std::min((int)pow(2, z) * 256 / commonTaskSettings.tileSize - 1, (int)floor(px1.y / (double)commonTaskSettings.tileSize));
 
             for (int y = y_first; y <= y_last; ++y)
             {
