@@ -61,5 +61,36 @@ The options are:
   --datasources arg (="/usr/lib/mapnik/input")
                                         mapnik data sources directory
   --fonts arg (="/usr/share/fonts")     fonts directory
+  --scale arg (=1)                      scale factor (use 2 for the 2x tiles
+                                        for high-resolution displays
+  --png arg (=1)                        create PNG (raster) tiles
+  --svg arg (=0)                        create SVG (vector) tiles - note that
+                                        SVG files for complicated tiles can be
+                                        extremely large without any converting
+  --convert_png arg                     conversion command to run for each PNG
+                                        tile - use placeholders for file paths:
+                                        $1 - absolute path of the original
+                                        file, $2 - absolute path of the
+                                        converted file
+  --convert_svg arg                     conversion command to run for each SVG
+                                        tile - use placeholders for file paths:
+                                        $1 - absolute path of the original
+                                        file, $2 - absolute path of the
+                                        converted file
+  --extension_converted_png arg (=.pngc)
+                                        extension of the converted PNG file
+  --extension_converted_svg arg (=.svgc)
+                                        extension of the converted SVG file
+  --delete_png arg (=0)                 delete original PNG file after
+                                        conversion
+  --delete_svg arg (=0)                 delete original SVG file after
+                                        conversion
+  --leave_smallest arg (=0)             leave smallest file amongst all
+                                        generated files
+  --tile_size arg (=256)                tile size
+  --buffer_size arg (=128)              Mapnik buffer size - use higher value
+                                        if some tile boundaries do not match
+                                        (e.g. if a text is cut at the edge of
+                                        two tiles)
 
 ```
