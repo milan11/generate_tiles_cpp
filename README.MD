@@ -14,6 +14,9 @@ It is an almost identical rewrite:
 - added possibility to configure Mapnik datasources and fonts directories
 - at the beginning, prints all fonts visible by Mapnik (so that it is easier to solve problems with missing fonts)
 - does not need Mapnik Python bindings (obviously)
+- possibility to specify scale, tile size and buffer size
+- SVG output format
+- calling additional post-processing (conversion) of the PNG or SVG files
 
 ## Building
 
