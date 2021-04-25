@@ -455,6 +455,37 @@ void initMapnik(const boost::filesystem::path &datasources, const boost::filesys
     }
 }
 
+bool isAsciiChar(const char c)
+{
+    return static_cast<unsigned char>(c) <= 127;
+}
+
+void checkPath(const std::string &path)
+{
+    const auto found = std::find_if(
+        std::begin(path),
+        std::end(path),
+        [](const char c) { return !(isAsciiChar(c) && (std::isalnum(c) || c == boost::filesystem::path::preferred_separator || c == '_' || c == '-' || c == '.')); });
+
+    if (found != path.end())
+    {
+        throw std::runtime_error(std::string("Invalid character in path: ") + *found);
+    }
+}
+
+void checkExtension(const std::string &extension)
+{
+    const auto found = std::find_if(
+        std::begin(extension),
+        std::end(extension),
+        [](const char c) { return !(isAsciiChar(c) && (std::isalnum(c) || c == '.')); });
+
+    if (found != extension.end())
+    {
+        throw std::runtime_error(std::string("Invalid character in extension: ") + *found);
+    }
+}
+
 int main(int argc, char *argv[])
 {
     try
@@ -517,6 +548,10 @@ int main(int argc, char *argv[])
         }
 
         boost::program_options::notify(vm);
+
+        checkPath(output.string());
+        checkExtension(commonTaskSettings.extensionConvertedPng);
+        checkExtension(commonTaskSettings.extensionConvertedSvg);
 
         initMapnik(datasources, fonts);
 
