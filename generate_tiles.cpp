@@ -102,10 +102,43 @@ struct CommonTaskSettings
     std::string extensionConvertedSvg;
     bool deletePng;
     bool deleteSvg;
-    bool leaveSmallestOnly;
+    bool leaveSmallest;
     int tileSize;
     int bufferSize;
 };
+
+std::vector<std::string> getPossibleExtensions(const CommonTaskSettings &commonTaskSettings)
+{
+    std::vector<std::string> possibleExtensions;
+
+    if (commonTaskSettings.png)
+    {
+        if (commonTaskSettings.convertPng == "" || !commonTaskSettings.deletePng)
+        {
+            possibleExtensions.push_back(extensionPng);
+        }
+
+        if (commonTaskSettings.convertPng != "")
+        {
+            possibleExtensions.push_back(commonTaskSettings.extensionConvertedPng);
+        }
+    }
+
+    if (commonTaskSettings.svg)
+    {
+        if (commonTaskSettings.convertSvg == "" || !commonTaskSettings.deleteSvg)
+        {
+            possibleExtensions.push_back(extensionSvg);
+        }
+
+        if (commonTaskSettings.convertSvg != "")
+        {
+            possibleExtensions.push_back(commonTaskSettings.extensionConvertedSvg);
+        }
+    }
+
+    return possibleExtensions;
+}
 
 class Queue
 {
@@ -299,6 +332,23 @@ private:
                 }
             }
         }
+
+        if (commonTaskSettings.leaveSmallest)
+        {
+            const std::vector<std::string> possibleExtensions = getPossibleExtensions(commonTaskSettings);
+
+            const std::string extensionWithMinSize = *std::min_element(possibleExtensions.begin(), possibleExtensions.end(), [&task](const std::string &extensionA, const std::string &extensionB) {
+                return boost::filesystem::file_size(task.tilePathWithoutExtension.string() + extensionA) < boost::filesystem::file_size(task.tilePathWithoutExtension.string() + extensionB);
+            });
+
+            for (const std::string &extension : possibleExtensions)
+            {
+                if (extension != extensionWithMinSize)
+                {
+                    boost::filesystem::remove(task.tilePathWithoutExtension.string() + extension);
+                }
+            }
+        }
     }
 
 private:
@@ -315,34 +365,9 @@ private:
 
 bool alreadyCreated(const CommonTaskSettings &commonTaskSettings, const boost::filesystem::path &tilePathWithoutExtension)
 {
-    std::vector<std::string> possibleExtensions;
-    if (commonTaskSettings.png)
-    {
-        if (commonTaskSettings.convertPng == "" || !commonTaskSettings.deletePng)
-        {
-            possibleExtensions.push_back(extensionPng);
-        }
+    const std::vector<std::string> possibleExtensions = getPossibleExtensions(commonTaskSettings);
 
-        if (commonTaskSettings.convertPng != "")
-        {
-            possibleExtensions.push_back(commonTaskSettings.extensionConvertedPng);
-        }
-    }
-
-    if (commonTaskSettings.svg)
-    {
-        if (commonTaskSettings.convertSvg == "" || !commonTaskSettings.deleteSvg)
-        {
-            possibleExtensions.push_back(extensionSvg);
-        }
-
-        if (commonTaskSettings.convertSvg != "")
-        {
-            possibleExtensions.push_back(commonTaskSettings.extensionConvertedSvg);
-        }
-    }
-
-    if (commonTaskSettings.leaveSmallestOnly)
+    if (commonTaskSettings.leaveSmallest)
     {
         return std::any_of(possibleExtensions.begin(), possibleExtensions.end(), [&tilePathWithoutExtension](const std::string &extension) { return boost::filesystem::is_regular_file(tilePathWithoutExtension.string() + extension); });
     }
@@ -478,7 +503,7 @@ int main(int argc, char *argv[])
         desc.add_options()("extension_converted_svg", boost::program_options::value(&commonTaskSettings.extensionConvertedSvg)->default_value(".svgc"), "extension of the converted SVG file");
         desc.add_options()("delete_png", boost::program_options::value(&commonTaskSettings.deletePng)->default_value(false), "delete original PNG file after conversion");
         desc.add_options()("delete_svg", boost::program_options::value(&commonTaskSettings.deleteSvg)->default_value(false), "delete original SVG file after conversion");
-        desc.add_options()("leave_smallest", boost::program_options::value(&commonTaskSettings.leaveSmallestOnly)->default_value(false), "leave smallest file amongst all generated files");
+        desc.add_options()("leave_smallest", boost::program_options::value(&commonTaskSettings.leaveSmallest)->default_value(false), "leave smallest file amongst all generated files");
         desc.add_options()("tile_size", boost::program_options::value(&commonTaskSettings.tileSize)->default_value(256), "tile size");
         desc.add_options()("buffer_size", boost::program_options::value(&commonTaskSettings.bufferSize)->default_value(128), "Mapnik buffer size - use higher value if some tile boundaries do not match (e.g. if a text is cut at the edge of two tiles)");
 
